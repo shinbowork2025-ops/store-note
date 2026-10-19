@@ -2,8 +2,8 @@
 
 import * as db from '../db.js';
 import * as store from '../store.js';
-import { csvEscape, downloadText, esc, todayStr, uid } from '../util.js';
-import { confirmDialog, openModal, toast } from '../ui.js';
+import { csvEscape, downloadText, esc, todayStr } from '../util.js';
+import { confirmDialog, toast } from '../ui.js';
 
 function rerender() { window.dispatchEvent(new Event('app:rerender')); }
 
@@ -23,10 +23,10 @@ export async function render(el) {
 
   el.innerHTML = `
     <div class="card">
-      <h3>スケジュールのプリセット</h3>
-      <div class="muted">名前・色・並び順・表示/非表示を変更できます</div>
+      <h3>スケジュールの予定候補</h3>
+      <div class="muted">入力した予定名が自動で追加されます。名前・色・並び順・表示/非表示を変更できます</div>
       <div data-sec="presets">
-        ${presets.map((p, i) => `
+        ${presets.length === 0 ? '<div class="muted mt8">まだ候補はありません。スケジュールで予定を登録すると追加されます。</div>' : presets.map((p, i) => `
           <div class="preset-row" data-id="${p.id}">
             <button class="btn mini" data-act="up" ${i === 0 ? 'disabled' : ''}>▲</button>
             <button class="btn mini" data-act="down" ${i === presets.length - 1 ? 'disabled' : ''}>▼</button>
@@ -36,7 +36,7 @@ export async function render(el) {
             <button class="btn mini ghost-danger" data-act="del">🗑</button>
           </div>`).join('')}
       </div>
-      <button class="btn small block mt8" data-act="add-preset">＋ プリセットを追加</button>
+      <button class="btn small block mt8" data-act="add-preset">＋ 候補を追加</button>
     </div>
 
     <div class="card">
@@ -89,7 +89,12 @@ function bindPresetHandlers(el, presets) {
     if (!p) return;
     row.querySelector('[data-f="name"]').addEventListener('change', (e) => {
       const v = e.target.value.trim();
-      if (v) { p.name = v; db.savePresets(presets); }
+      if (!v || presets.some(other => other !== p && other.name.trim() === v)) {
+        e.target.value = p.name;
+        toast(v ? '同じ名前の候補があります' : '予定名を入力してください');
+        return;
+      }
+      p.name = v; db.savePresets(presets);
     });
     row.querySelector('[data-f="color"]').addEventListener('change', (e) => {
       p.color = e.target.value; db.savePresets(presets);
@@ -105,7 +110,7 @@ function bindPresetHandlers(el, presets) {
     });
     row.querySelector('[data-act="del"]').addEventListener('click', async () => {
       const ok = await confirmDialog(
-        `プリセット「${p.name}」を削除しますか?\n(登録済みのスケジュールのマスは「削除済み項目」と表示されます)`,
+        `候補「${p.name}」を削除しますか?\n登録済みの予定とテンプレートの名前は残ります。`,
         { okLabel: '削除する', danger: true });
       if (!ok) return;
       presets.splice(presets.indexOf(p), 1);
@@ -113,11 +118,11 @@ function bindPresetHandlers(el, presets) {
     });
   });
 
-  el.querySelector('[data-act="add-preset"]').addEventListener('click', () => {
-    const name = window.prompt('プリセット名');
+  el.querySelector('[data-act="add-preset"]').addEventListener('click', async () => {
+    const name = window.prompt('予定の候補名');
     if (!name || !name.trim()) return;
-    presets.push({ id: `p-${uid()}`, name: name.trim(), color: '#2563eb', visible: true });
-    save();
+    await db.rememberScheduleName(name);
+    rerender();
   });
 }
 

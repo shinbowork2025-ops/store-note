@@ -21,13 +21,15 @@ export function groupBlocks(schedule) {
 
 function slotEq(a, b) {
   if (a === null || b === null) return a === b;
+  if (a.t !== undefined || b.t !== undefined) return a.t === b.t && a.c === b.c;
   if (a.p !== undefined) return b.p === a.p;
-  return b.t !== undefined && b.t === a.t;
+  return false;
 }
 
 function slotColor(slot, presets) {
   if (!slot) return null;
-  if (slot.t !== undefined) return '#8a5a2b'; // 自由記入
+  if (slot.c) return slot.c;
+  if (slot.t !== undefined) return db.scheduleColor(slot.t);
   const p = presets.find(x => x.id === slot.p);
   return p ? p.color : '#94a3b8';
 }
@@ -37,11 +39,16 @@ let mode = 'view';               // 'view' | 'edit'
 let selectedTool = null;         // {type:'preset',id} | {type:'erase'} | {type:'free', text}
 let undoStack = [];
 let redoStack = [];
+let editingDate = null;
+let nameDraft = '';
 
 export function resetMode() { mode = 'view'; undoStack = []; redoStack = []; }
+export function isEditing() { return mode === 'edit'; }
 
 export async function render(el) {
   const daily = store.getDaily();
+  if (editingDate && editingDate !== daily.date) resetMode();
+  editingDate = daily.date;
   const presets = await db.getPresets();
   if (mode === 'edit') renderEdit(el, daily, presets);
   else renderView(el, daily, presets);
@@ -109,14 +116,15 @@ function renderView(el, daily, presets) {
 // ---------- 編集モード ----------
 
 function renderEdit(el, daily, presets) {
+  if (selectedTool?.type === 'free') {
+    const remembered = presets.find(p => p.name === selectedTool.text && p.visible);
+    if (remembered) selectedTool = { type: 'preset', id: remembered.id };
+  }
   const visible = presets.filter(p => p.visible);
-  const freeText = selectedTool && selectedTool.type === 'free' && selectedTool.text
-    ? `「${esc(selectedTool.text)}」` : '';
   const toolChips = visible.map(p => `
     <button class="chip tool" data-tool="preset" data-id="${p.id}">
       <span class="tool-color" style="background:${p.color}"></span>${esc(p.name)}
     </button>`).join('') + `
-    <button class="chip tool" data-tool="free">✎ 自由記入${freeText}</button>
     <button class="chip tool" data-tool="erase">🧽 消去</button>`;
 
   let rows = '';
@@ -138,14 +146,32 @@ function renderEdit(el, daily, presets) {
       <button class="btn small" data-act="tpl-apply">テンプレ適用</button>
       <button class="btn small primary" data-act="done" style="margin-left:auto">完了</button>
     </div>
-    <div class="paint-tools">${toolChips}</div>
-    <div class="muted" style="margin:4px 0 8px">項目を選んでマスをタップ、またはなぞって入力。右のレーンか時刻列でスクロール</div>
+    <div class="card schedule-input">
+      <label class="f-label" for="schedule-name">予定名を入力</label>
+      <div class="btn-row">
+        <input id="schedule-name" type="text" data-f="schedule-name" value="${esc(nameDraft)}" placeholder="例：鉢の補充" enterkeyhint="done">
+        <button class="chip tool" data-tool="free">選択</button>
+      </div>
+      <div class="muted mt8">時間帯へ登録すると、次回から使える候補に残ります。</div>
+      <div class="paint-tools">${toolChips}</div>
+      <div class="schedule-selection" role="status"></div>
+    </div>
+    <div class="muted" style="margin:4px 0 8px">予定を選んでマスをタップ、またはなぞって入力。右のレーンか時刻列でスクロール</div>
     <div class="paint-grid-wrap">
       <div class="paint-grid">${rows}</div>
       <div class="scroll-rail"><span class="rail-label">スクロール</span></div>
     </div>`;
 
-  const slots = daily.schedule;
+  const slots = daily.schedule.slice();
+  let saving = false;
+  const nameInput = el.querySelector('[data-f="schedule-name"]');
+  nameInput.addEventListener('input', () => { nameDraft = nameInput.value; });
+  nameInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.isComposing) {
+      e.preventDefault();
+      el.querySelector('[data-tool="free"]').click();
+    }
+  });
 
   const paintCells = () => {
     el.querySelectorAll('.pg-cell').forEach(cell => {
@@ -170,21 +196,25 @@ function renderEdit(el, daily, presets) {
   const selectToolBtn = (btn) => {
     el.querySelectorAll('.chip.tool').forEach(c => c.classList.remove('on'));
     if (btn) btn.classList.add('on');
+    const label = selectedTool?.type === 'erase' ? '消去' : selectedTool?.type === 'free'
+      ? selectedTool.text : presets.find(p => p.id === selectedTool?.id)?.name;
+    el.querySelector('.schedule-selection').textContent = label ? `選択中：${label}` : '予定名を入力するか、候補を選んでください';
   };
   el.querySelectorAll('.chip.tool').forEach(btn => {
     btn.addEventListener('click', () => {
       const t = btn.dataset.tool;
       if (t === 'free') {
-        // 選択時にテキストを決めておき、あとはプリセット同様になぞって塗れる
-        const prev = selectedTool && selectedTool.type === 'free' ? selectedTool.text : '';
-        const text = window.prompt('自由記入の内容', prev || '');
-        if (text === null || text.trim() === '') return;
-        selectedTool = { type: 'free', text: text.trim() };
-        btn.innerHTML = `✎ 自由記入「${esc(selectedTool.text)}」`;
+        const text = nameInput.value.trim();
+        if (!text) { toast('予定名を入力してください'); nameInput.focus(); return; }
+        const existing = presets.find(p => p.name.trim() === text);
+        selectedTool = existing && existing.visible ? { type: 'preset', id: existing.id } : { type: 'free', text };
+        nameInput.blur();
       } else {
         selectedTool = t === 'preset' ? { type: 'preset', id: btn.dataset.id } : { type: t };
       }
-      selectToolBtn(btn);
+      const selected = selectedTool.type === 'preset'
+        ? el.querySelector(`.chip.tool[data-id="${selectedTool.id}"]`) : btn;
+      selectToolBtn(selected);
     });
   });
   // 前回選択の復元
@@ -194,9 +224,21 @@ function renderEdit(el, daily, presets) {
       : el.querySelector(`.chip.tool[data-tool="${selectedTool.type}"]`);
     if (sel) selectToolBtn(sel); else selectedTool = null;
   }
+  if (!selectedTool) selectToolBtn(null);
 
   const commit = async () => {
-    await store.mutateDaily(d => { d.schedule = slots.slice(); });
+    saving = true;
+    const savedSlots = slots.slice();
+    const rememberName = selectedTool?.type === 'free' && savedSlots.some(s => s?.t === selectedTool.text)
+      ? selectedTool.text : null;
+    try {
+      await store.mutateDaily(d => { d.schedule = savedSlots; }, { expectedDate: daily.date, rememberName });
+    } catch {
+      toast('予定を保存できませんでした。もう一度入力してください', 4000);
+      await render(el);
+    } finally {
+      saving = false;
+    }
   };
 
   const applyToSlot = (i, value) => {
@@ -213,13 +255,20 @@ function renderEdit(el, daily, presets) {
 
   const toolValue = () => {
     if (!selectedTool) return undefined;
-    if (selectedTool.type === 'preset') return { p: selectedTool.id };
+    if (selectedTool.type === 'preset') {
+      const p = presets.find(p => p.id === selectedTool.id);
+      return { p: p.id, t: p.name, c: p.color };
+    }
     if (selectedTool.type === 'erase') return null;
-    if (selectedTool.type === 'free') return { t: selectedTool.text };
+    if (selectedTool.type === 'free') {
+      const existing = presets.find(p => p.name.trim() === selectedTool.text);
+      return { t: selectedTool.text, c: existing?.color || db.scheduleColor(selectedTool.text) };
+    }
     return undefined;
   };
 
   grid.addEventListener('pointerdown', (e) => {
+    if (saving) return;
     const cell = e.target.closest('.pg-cell');
     if (!cell) return;
     const i = Number(cell.dataset.slot);
@@ -260,6 +309,7 @@ function renderEdit(el, daily, presets) {
 
   // アクション
   el.querySelector('[data-act="undo"]').addEventListener('click', () => {
+    if (saving) return;
     if (!undoStack.length) return;
     redoStack.push(slots.slice());
     const prev = undoStack.pop();
@@ -267,6 +317,7 @@ function renderEdit(el, daily, presets) {
     paintCells(); commit();
   });
   el.querySelector('[data-act="redo"]').addEventListener('click', () => {
+    if (saving) return;
     if (!redoStack.length) return;
     undoStack.push(slots.slice());
     const next = redoStack.pop();
@@ -274,12 +325,14 @@ function renderEdit(el, daily, presets) {
     paintCells(); commit();
   });
   el.querySelector('[data-act="clear"]').addEventListener('click', async () => {
+    if (saving) return;
     if (!await confirmDialog('スケジュールを全消去しますか?', { okLabel: '全消去', danger: true })) return;
     undoStack.push(slots.slice()); redoStack = [];
     for (let i = 0; i < SLOT_COUNT; i++) slots[i] = null;
     paintCells(); commit();
   });
   el.querySelector('[data-act="tpl-save"]').addEventListener('click', async () => {
+    if (saving) return;
     const name = window.prompt('テンプレート名(例: 早番)');
     if (!name || !name.trim()) return;
     const templates = await db.getTemplates();
@@ -287,10 +340,11 @@ function renderEdit(el, daily, presets) {
     await db.saveTemplates(templates);
     toast('テンプレートを保存しました');
   });
-  el.querySelector('[data-act="tpl-apply"]').addEventListener('click', () => applyTemplate(el, slots, () => {
+  el.querySelector('[data-act="tpl-apply"]').addEventListener('click', () => { if (!saving) applyTemplate(el, slots, () => {
     undoStack.push(slots.slice()); redoStack = [];
-  }));
+  }); });
   el.querySelector('[data-act="done"]').addEventListener('click', () => {
+    if (saving) return;
     mode = 'view';
     render(el);
   });
@@ -310,9 +364,9 @@ async function applyTemplate(el, workingSlots = null, beforeApply = null) {
   if (beforeApply) beforeApply();
   if (workingSlots) {
     for (let i = 0; i < SLOT_COUNT; i++) workingSlots[i] = tpl.slots[i] ?? null;
-    await store.mutateDaily(d => { d.schedule = workingSlots.slice(); });
+    await store.mutateDaily(d => { d.schedule = workingSlots.slice(); }, { expectedDate: daily.date });
   } else {
-    await store.mutateDaily(d => { d.schedule = tpl.slots.slice(0, SLOT_COUNT); });
+    await store.mutateDaily(d => { d.schedule = tpl.slots.slice(0, SLOT_COUNT); }, { expectedDate: daily.date });
   }
   toast(`「${tpl.name}」を適用しました`);
 }

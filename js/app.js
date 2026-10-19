@@ -22,6 +22,7 @@ const ROUTES = {
 
 let currentRoute = 'home';
 let rendering = false;
+let renderAgain = false;
 
 function routeFromHash() {
   const name = (location.hash || '#/home').replace(/^#\//, '');
@@ -29,7 +30,7 @@ function routeFromHash() {
 }
 
 async function renderCurrent({ preserveScroll = false } = {}) {
-  if (rendering) return;
+  if (rendering) { renderAgain = true; return; }
   rendering = true;
   try {
     const el = document.getElementById('view');
@@ -38,6 +39,10 @@ async function renderCurrent({ preserveScroll = false } = {}) {
     if (preserveScroll) window.scrollTo(0, scrollY);
   } finally {
     rendering = false;
+    if (renderAgain) {
+      renderAgain = false;
+      await renderCurrent({ preserveScroll: true });
+    }
   }
 }
 
@@ -135,7 +140,7 @@ async function main() {
   setInterval(() => {
     if (document.visibilityState !== 'visible') return;
     updateCsButton();
-    if (currentRoute === 'home' || currentRoute === 'schedule') {
+    if (currentRoute === 'home' || (currentRoute === 'schedule' && !schedule.isEditing())) {
       renderCurrent({ preserveScroll: true });
     }
   }, 60000);

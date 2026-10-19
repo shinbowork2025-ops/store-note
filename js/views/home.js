@@ -6,6 +6,7 @@ import { DAY_START, DAY_END, esc, minToLabel, nowMin, slotStartMin, slotIndexAt,
 import { confirmDialog } from '../ui.js';
 import { groupBlocks } from './schedule.js';
 import { endCustomerTimer } from './questions.js';
+import { openMemo } from './memo.js';
 
 const BACKUP_REMIND_DAYS = 7;
 
@@ -78,6 +79,14 @@ export async function render(el) {
     }
   }
 
+  // 日中の自由メモ
+  html += `
+    <div class="card memo-card">
+      <h3>📝 今日のメモ</h3>
+      ${daily.memo ? `<div class="memo-text memo-preview">${esc(daily.memo)}</div>` : '<div class="muted">気づいたことや、あとで確認することを記録できます</div>'}
+      <button class="btn block mt8" data-act="edit-memo">${daily.memo ? 'メモを編集' : 'メモを書く'}</button>
+    </div>`;
+
   // 未完了TODO
   const openTodos = daily.todos.filter(t => t.status !== 'done');
   const preview = [...openTodos].sort((a, b) =>
@@ -108,6 +117,10 @@ export async function render(el) {
     </div>`;
 
   el.innerHTML = html;
+  el.querySelector('[data-act="edit-memo"]').addEventListener('click', async () => {
+    await store.refreshDay();
+    openMemo();
+  });
 
   // タイマー操作
   const endBtn = el.querySelector('[data-act="timer-end"]');

@@ -1,6 +1,8 @@
 // バックアップ出力→全削除→復元の一連の確認
 const { chromium } = require('playwright-core');
 const fs = require('fs');
+const os = require('os');
+const pathModule = require('path');
 
 const BASE = 'http://127.0.0.1:8123';
 const results = [];
@@ -40,7 +42,7 @@ function check(name, cond) {
   await page.waitForTimeout(200);
   await page.click('button:has-text("出力する")');
   const dl = await dlPromise;
-  const path = '/tmp/backup.json';
+  const path = pathModule.join(fs.mkdtempSync(pathModule.join(os.tmpdir(), 'store-note-backup-')), 'backup.json');
   await dl.saveAs(path);
   const backup = JSON.parse(fs.readFileSync(path, 'utf-8'));
   check('バックアップにschemaVersionがある', Number.isInteger(backup.schemaVersion));
