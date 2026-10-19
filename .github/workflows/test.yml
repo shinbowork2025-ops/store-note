@@ -32,3 +32,4 @@ jobs:
           export CHROME_PATH="$(node -e "process.stdout.write(require('playwright').chromium.executablePath())")"
           node tests/smoke.js
           node tests/smoke-backup.js
+          node tests/smoke-install.js

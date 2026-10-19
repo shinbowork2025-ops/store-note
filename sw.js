@@ -1,9 +1,13 @@
 // Service Worker: アプリ本体を事前キャッシュしてオフラインで動かす
-const CACHE = 'store-note-v4';
+const CACHE = 'store-note-v5';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './app/',
+  './app/index.html',
+  './app/manifest.webmanifest',
+  './js/install.js',
   './css/app.css',
   './fonts/BIZUDPGothic-Regular.woff',
   './js/app.js',
@@ -52,7 +56,10 @@ self.addEventListener('fetch', (e) => {
         return res;
       }).catch(() => {
         // ナビゲーションはオフラインでもアプリ本体へフォールバック
-        if (e.request.mode === 'navigate') return caches.match('./index.html');
+        if (e.request.mode === 'navigate') {
+          const appPath = new URL('./app/', self.location.href).pathname;
+          return caches.match(url.pathname.startsWith(appPath) ? './app/index.html' : './index.html');
+        }
         throw new Error('offline');
       });
     })

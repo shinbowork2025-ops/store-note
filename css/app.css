@@ -320,3 +320,6 @@ details.done-fold summary { padding: 10px; color: var(--muted); cursor: pointer;
 .hidden { display: none !important; }
 .center { text-align: center; }
 .mt8 { margin-top: 8px; } .mt12 { margin-top: 12px; }
+
+.install-card { max-width: 616px; margin: 12px auto; }
+[hidden] { display: none !important; }
