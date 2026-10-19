@@ -3,7 +3,7 @@
 import { SLOT_COUNT, SLOT_MIN, todayStr, uid } from './util.js';
 
 export const APP_ID = 'store-work-note';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const DB_NAME = 'store-work-note';
 const DB_VER = 1;
@@ -55,7 +55,8 @@ export function putKV(key, value) { return put('kv', { key, value }); }
 
 // ---- プリセット ----
 
-export const DEFAULT_PRESETS = [
+// 旧版データの移行専用。新規利用時の候補には追加しない。
+const LEGACY_PRESETS = [
   { id: 'p-reji',    name: 'レジ',             color: '#2563eb', visible: true },
   { id: 'p-hiru',    name: '昼休憩',           color: '#f59e0b', visible: true },
   { id: 'p-kokyu',   name: '小休憩',           color: '#fbbf24', visible: true },
@@ -68,11 +69,83 @@ export const DEFAULT_PRESETS = [
 ];
 
 export async function getPresets() {
-  let p = await getKV('presets');
-  if (!p) { p = structuredClone(DEFAULT_PRESETS); await putKV('presets', p); }
-  return p;
+  await migrateSchedulePresets();
+  return (await getKV('presets')) || [];
 }
 export function savePresets(p) { return putKV('presets', p); }
+
+const PRESET_MODE_VERSION = 1;
+const PRESET_COLORS = ['#2563eb', '#7c3aed', '#0d9488', '#b45309', '#be185d', '#475569'];
+
+export function scheduleColor(name) {
+  const hash = Array.from(name).reduce((n, ch) => (n * 31 + ch.codePointAt(0)) >>> 0, 0);
+  return PRESET_COLORS[hash % PRESET_COLORS.length];
+}
+
+// 候補を改名・削除しても、登録時点の予定名・色を保持する。
+export function snapshotSlots(slots, presets) {
+  return slots.map(slot => {
+    if (!slot) return null;
+    const name = slotLabel(slot, presets);
+    const preset = presets.find(p => p.id === slot.p);
+    return { ...slot, t: name, c: slot.c || (preset && preset.color) || scheduleColor(name) };
+  });
+}
+
+// 日次データ・テンプレートを変換してから未変更の既定候補を除去する。
+// マーカーまで同じトランザクションで保存し、中断後も安全に再実行できる。
+async function migrateSchedulePresets() {
+  const d = await open();
+  await new Promise((resolve, reject) => {
+    const tx = d.transaction(['daily', 'kv'], 'readwrite');
+    const kv = tx.objectStore('kv');
+    kv.get('presetModeVersion').onsuccess = function () {
+      if (this.result && this.result.value === PRESET_MODE_VERSION) return;
+      const requests = [kv.get('presets'), kv.get('templates'), tx.objectStore('daily').getAll()];
+      let remaining = requests.length;
+      requests.forEach(req => { req.onsuccess = () => {
+        if (--remaining) return;
+        const presets = requests[0].result?.value || [];
+        const templates = requests[1].result?.value || [];
+        for (const daily of requests[2].result) {
+          daily.schedule = snapshotSlots(daily.schedule, presets);
+          tx.objectStore('daily').put(daily);
+        }
+        for (const template of templates) template.slots = snapshotSlots(template.slots, presets);
+        const custom = presets.filter(p => !LEGACY_PRESETS.some(old =>
+          old.id === p.id && old.name === p.name && old.color === p.color));
+        kv.put({ key: 'presets', value: custom });
+        kv.put({ key: 'templates', value: templates });
+        kv.put({ key: 'presetModeVersion', value: PRESET_MODE_VERSION });
+      }; });
+    };
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+// 実際に時間帯へ登録した名前だけを候補として覚える。同名は再利用する。
+export async function rememberScheduleName(text) {
+  const name = text.trim();
+  if (!name) return;
+  await migrateSchedulePresets();
+  const d = await open();
+  await new Promise((resolve, reject) => {
+    const tx = d.transaction('kv', 'readwrite');
+    const kv = tx.objectStore('kv');
+    kv.get('presets').onsuccess = function () {
+      const presets = this.result?.value || [];
+      const existing = presets.find(p => p.name.trim() === name);
+      if (existing) existing.visible = true;
+      else presets.push({ id: `p-${uid()}`, name, color: scheduleColor(name), visible: true });
+      kv.put({ key: 'presets', value: presets });
+    };
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
 
 export async function getTemplates() { return (await getKV('templates')) || []; }
 export function saveTemplates(t) { return putKV('templates', t); }
@@ -87,6 +160,7 @@ export function saveMeta(m) { return putKV('meta', m); }
 export function emptyDaily(date) {
   return {
     date,
+    memo: '',
     schedule: Array(SLOT_COUNT).fill(null), // null | {p:presetId} | {t:'自由記入テキスト'}
     todos: [],       // {id, text, deadlineType:'none'|'time'|'endOfDay', deadlineTime, priority:'normal'|'urgent', status:'todo'|'doing'|'done', aisle, createdAt}
     questions: [],   // {id, at, placeType, placeAisle, placeFixed, content, destType, destAisle, destFixed, displayData, minutes, tools:[], result}
@@ -113,7 +187,7 @@ export function slotLabel(slot, presets) {
 
 export function computeSummary(daily, presets) {
   // スケジュール
-  const byItem = {};
+  const byItem = Object.create(null);
   let filled = 0;
   for (const slot of daily.schedule) {
     const label = slotLabel(slot, presets);
@@ -168,6 +242,7 @@ export function computeSummary(daily, presets) {
 
   return {
     date: daily.date,
+    memo: daily.memo || '',
     schedule: { byItem, filledMinutes: filled, emptyMinutes: SLOT_COUNT * SLOT_MIN - filled },
     todo: todoSummary,
     questions: questionSummary,
@@ -177,17 +252,49 @@ export function computeSummary(daily, presets) {
 
 // 指定日の日次データを締めて集計へ変換する
 async function closeDay(date) {
-  const old = await getDaily(date);
-  if (old) {
-    const presets = await getPresets();
-    await putSummary(computeSummary(old, presets));
-    await deleteDaily(date);
-  }
+  const presets = await getPresets();
+  const d = await open();
+  await new Promise((resolve, reject) => {
+    const tx = d.transaction(['daily', 'summaries'], 'readwrite');
+    const days = tx.objectStore('daily');
+    days.get(date).onsuccess = function () {
+      if (!this.result) return;
+      tx.objectStore('summaries').put(computeSummary(this.result, presets));
+      days.delete(date);
+    };
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+// 編集中に日付が変わっても、そのメモを元の日付の記録へ保存する。
+export async function saveMemo(date, text) {
+  const d = await open();
+  await new Promise((resolve, reject) => {
+    const tx = d.transaction(['daily', 'summaries'], 'readwrite');
+    const days = tx.objectStore('daily');
+    days.get(date).onsuccess = function () {
+      if (this.result) {
+        days.put({ ...this.result, memo: text });
+      } else {
+        const summaries = tx.objectStore('summaries');
+        summaries.get(date).onsuccess = function () {
+          if (this.result) summaries.put({ ...this.result, memo: text });
+          else tx.abort();
+        };
+      }
+    };
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error('メモを保存できませんでした'));
+    tx.onabort = () => reject(tx.error || new Error('保存先の日付の記録がありません'));
+  });
 }
 
 // 日付変更の検出と締め処理。起動時・再表示時・書き込み前に呼ぶ。
 // 返り値: { daily, closedDate, clockBack }
 export async function ensureToday() {
+  await migrateSchedulePresets();
   const today = todayStr();
   const meta = await getMeta();
   let closedDate = null;
@@ -262,6 +369,7 @@ export function newOrder({ name, caseNumber, memo }) {
 // ---- バックアップ ----
 
 export async function exportBackup() {
+  await migrateSchedulePresets();
   const meta = await getMeta();
   const [orders, summaries, daily] = await Promise.all([
     getOrders(), getSummaries(),
@@ -276,6 +384,7 @@ export async function exportBackup() {
       summaries,
       presets: await getPresets(),
       templates: await getTemplates(),
+      presetModeVersion: PRESET_MODE_VERSION,
       meta,
       daily: daily || null,
     },
@@ -302,6 +411,7 @@ export async function importBackup(obj) {
   for (const s of d.summaries) await put('summaries', s);
   if (d.presets) await putKV('presets', d.presets);
   if (d.templates) await putKV('templates', d.templates);
+  if (d.presetModeVersion) await putKV('presetModeVersion', d.presetModeVersion);
   if (d.meta) await putKV('meta', d.meta);
   if (d.daily && d.daily.date) await put('daily', d.daily);
 }

@@ -1,16 +1,18 @@
 // Service Worker: アプリ本体を事前キャッシュしてオフラインで動かす
-const CACHE = 'store-note-v3';
+const CACHE = 'store-note-v4';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './css/app.css',
+  './fonts/BIZUDPGothic-Regular.woff',
   './js/app.js',
   './js/db.js',
   './js/store.js',
   './js/ui.js',
   './js/util.js',
   './js/views/home.js',
+  './js/views/memo.js',
   './js/views/schedule.js',
   './js/views/todo.js',
   './js/views/questions.js',

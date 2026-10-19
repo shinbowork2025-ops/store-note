@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "BIZ UDPGothic";
+  src: url('../fonts/BIZUDPGothic-Regular.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg: #f4f6f9;
   --card: #ffffff;
@@ -17,7 +25,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; }
 body {
-  font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  font-family: "BIZ UDPGothic", "BIZ UDGothic", "UD Digi Kyokasho N-R", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   background: var(--bg);
   color: var(--text);
   font-size: 16px;
@@ -92,6 +100,18 @@ input[type="text"], input[type="number"], input[type="time"], textarea, select {
   color: var(--text);
 }
 textarea { min-height: 72px; resize: vertical; }
+input, textarea, button, select { font-family: inherit; }
+.memo-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 17px; }
+.memo-preview { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+#daily-memo { font-size: 17px; line-height: 1.6; }
+.memo-save-status { min-height: 28px; margin-top: 8px; font-size: 16px; }
+.schedule-input label { font-size: 16px; }
+.schedule-input .btn-row { align-items: stretch; }
+.schedule-input .btn-row input { min-width: 0; flex: 1; }
+.schedule-input .btn-row button { flex: none; }
+.schedule-selection { margin-top: 10px; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.schedule-input .paint-tools { position: static; margin-top: 12px; }
+.schedule-input .chip { font-size: 17px; }
 .inline-num { display: flex; align-items: center; gap: 8px; }
 .inline-num input { width: 90px; }
 .prefix-num { display: flex; align-items: center; gap: 4px; }

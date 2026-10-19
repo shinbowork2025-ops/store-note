@@ -37,22 +37,30 @@ function check(name, cond) {
   await page.waitForTimeout(300);
   check('TODOが一覧に出る', await page.locator('.todo-text:has-text("テスト補充作業")').count() === 1);
 
-  // --- スケジュール編集(プリセットペイント) ---
+  // --- 自由メモ ---
+  await page.click('#bottomnav a[data-route="home"]');
+  await page.click('[data-act="edit-memo"]');
+  await page.fill('[data-f="daily-memo"]', '今日の気づき\n棚の表示を確認');
+  await page.getByRole('status').filter({ hasText: '保存済み' }).waitFor();
+  await page.click('[data-act="close-memo"]');
+  check('ホームにメモが表示される', (await page.locator('.memo-preview').textContent()).includes('棚の表示を確認'));
+
+  // --- スケジュール編集(初期候補なし・入力名の自動登録) ---
   await page.click('#bottomnav a[data-route="schedule"]');
   await page.waitForTimeout(300);
   await page.click('[data-act="edit"]');
   await page.waitForTimeout(200);
-  await page.click('.chip.tool[data-id="p-reji"]');
-  // 9:00のマス(slot 9)をタップ
-  const cell = page.locator('.pg-cell[data-slot="9"]');
-  await cell.dispatchEvent('pointerdown', { bubbles: true, clientX: 0, clientY: 0, pointerId: 1 });
-  await cell.dispatchEvent('pointerup', { bubbles: true, pointerId: 1 });
+  check('既定の候補がない', await page.locator('.chip.tool[data-tool="preset"]').count() === 0);
+  await page.fill('[data-f="schedule-name"]', 'レジ');
+  await page.click('[data-tool="free"]');
+  await page.locator('.pg-cell[data-slot="9"]').click();
   await page.waitForTimeout(400);
   check('マスにレジが入る', (await page.locator('.pg-cell[data-slot="9"]').textContent()).includes('レジ'));
+  check('入力した予定が候補になる', await page.locator('.chip.tool[data-tool="preset"]:has-text("レジ")').count() === 1);
 
   // 自由記入をドラッグで塗り広げる(チップ選択時にテキスト入力)
-  page.once('dialog', d => d.accept('自由テスト'));
-  await page.click('.chip.tool[data-tool="free"]');
+  await page.fill('[data-f="schedule-name"]', '自由テスト');
+  await page.click('[data-tool="free"]');
   await page.waitForTimeout(200);
   await page.locator('.pg-cell[data-slot="22"]').scrollIntoViewIfNeeded();
   await page.waitForTimeout(200);
@@ -145,6 +153,7 @@ function check(name, cond) {
   await page.waitForTimeout(800);
   await page.click('#bottomnav a[data-route="todo"]');
   await page.waitForTimeout(300);
+  check('リロード後もメモが残る', await page.evaluate(async () => (await (await import('/js/db.js')).exportBackup()).data.daily.memo === '今日の気づき\n棚の表示を確認'));
   check('リロード後もTODOが残る', (await page.locator('#view').textContent()).includes('テスト補充作業'));
   await page.click('#bottomnav a[data-route="orders"]');
   await page.waitForTimeout(300);
@@ -193,6 +202,7 @@ function check(name, cond) {
   await page.click('.sum-date-item');
   await page.waitForTimeout(300);
   const detail = await page.locator('.modal-sheet').textContent();
+  check('日付変更後もメモが読める', detail.includes('今日の気づき') && detail.includes('棚の表示を確認'));
   check('集計詳細に時間帯別がある', detail.includes('時間帯別') && detail.includes('時台'));
   check('集計詳細に通路別がある', detail.includes('12番通路'));
   check('集計詳細に結末別がある', detail.includes('結末別') && detail.includes('取り寄せ'));

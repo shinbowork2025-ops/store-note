@@ -58,6 +58,10 @@ function openDetail(s) {
   const m = openModal(`
     <div class="modal-head"><h2>${fmtDateJa(s.date)}</h2><button class="modal-close">✕</button></div>
 
+    <div class="card"><h3>📝 メモ</h3>
+      ${s.memo ? `<div class="memo-text">${esc(s.memo)}</div>` : '<div class="muted">メモはありません</div>'}
+    </div>
+
     <div class="card"><h3>🕒 スケジュール</h3>
       ${table(s.schedule.byItem, '分')}
       <div class="muted mt8">予定あり ${s.schedule.filledMinutes}分 / 未入力 ${s.schedule.emptyMinutes}分</div>

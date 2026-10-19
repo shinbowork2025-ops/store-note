@@ -3,11 +3,22 @@
 ホムセン店舗で使うために作成したツールです。要件定義以外AI製。
 
 店舗勤務中にスマートフォンで使う個人用の業務補助PWA。
-スケジュール(15分単位)・当日TODO・お客様質問記録・客注管理を1つのアプリで扱う。
+スケジュール(15分単位)・当日TODO・自由メモ・お客様質問記録・客注管理を1つのアプリで扱う。
 
 - データはすべて端末内(IndexedDB)に保存。サーバー送信・ログイン・共有機能なし
 - オフライン動作(Service Workerによる事前キャッシュ)
 - ビルド不要の静的なHTML/CSS/JS(ESモジュール)
+
+## メモとスケジュール入力
+
+- ホームの「今日のメモ」から入力。入力のたびに端末内へ自動保存する。
+- メモは日付変更後も日次集計の詳細に残る。編集中に日付をまたいでも元の日付へ保存する。
+- スケジュール編集で予定名を入力し「選択」してから、時間帯をタップまたはなぞって登録する。
+- 実際に時間帯へ登録した予定名が候補に自動追加される。前後の空白を除いた同名は再利用する。
+- 初期候補は空。設定で候補の改名・色・並び順・表示状態を変更できる。
+- 登録済みの予定とテンプレートは名前・色を保持するため、候補を改名・削除しても内容は変わらない。
+- 旧版の既定候補は更新時に除去する。旧版の予定・テンプレートと独自候補は保持する。
+- バックアップ形式はバージョン2。旧版のバージョン1も復元できる。
 
 ## 起動方法(ローカル)
 
@@ -37,6 +48,16 @@ python3 -m http.server 8123 &     # アプリを配信しておく
 CHROME_PATH=/path/to/chrome node tests/smoke.js         # 主要機能・日付変更処理
 CHROME_PATH=/path/to/chrome node tests/smoke-backup.js  # バックアップ→全削除→復元
 ```
+
+保存・旧版移行と画面処理の回帰テスト(実ブラウザーなしでも実行可能):
+
+```sh
+npm install --no-save fake-indexeddb esbuild jsdom
+node tests/data-regression.mjs
+node tests/ui-regression.cjs
+```
+
+GitHub Actionsの`Test`で上記の回帰テストとChromiumによるスモークテストを実行する。
 
 ## PWAインストール方法
 
@@ -68,7 +89,8 @@ CHROME_PATH=/path/to/chrome node tests/smoke-backup.js  # バックアップ→�
 |---|---|
 | スケジュール本体 | 客注 |
 | 当日TODO | 日次集計結果 |
-| お客様質問の個別記録 | スケジュールプリセット/テンプレート |
+| お客様質問の個別記録 | メモ本文(日次集計内) |
+| | スケジュール候補/テンプレート |
 | 対応中タイマー(破棄) | アプリ設定 |
 
 日付変更は「起動時・画面再表示時・すべての書き込み直前」に検出する。
@@ -105,7 +127,8 @@ js/db.js              IndexedDB・締め処理・集計・バックアップ
 js/store.js           当日データの共有状態(書き込み前の日付チェック)
 js/ui.js              モーダル・トースト・チップUI
 js/app.js             ルーティング・FAB・PWA登録
-js/views/*.js         各画面(home/schedule/todo/questions/orders/summary/settings)
+js/views/*.js         各画面(home/memo/schedule/todo/questions/orders/summary/settings)
 tests/*.js            Playwrightスモークテスト
 icons/                PWAアイコン
+fonts/                BIZ UDPゴシック(同梱、SIL Open Font License)
 ```
