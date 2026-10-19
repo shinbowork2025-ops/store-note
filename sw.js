@@ -1,5 +1,5 @@
 // Service Worker: アプリ本体を事前キャッシュしてオフラインで動かす
-const CACHE = 'store-note-v5';
+const CACHE = 'store-note-v6';
 const ASSETS = [
   './',
   './index.html',

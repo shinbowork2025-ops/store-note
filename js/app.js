@@ -155,7 +155,7 @@ async function main() {
 
   // Service Worker登録(PWA・オフライン対応)
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(err => {
+    navigator.serviceWorker.register(new URL('../sw.js', import.meta.url)).catch(err => {
       console.warn('SW registration failed', err);
     });
   }
